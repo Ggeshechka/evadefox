@@ -2,8 +2,6 @@ from typing import TYPE_CHECKING
 
 import orjson
 
-from models.session import Session
-
 if TYPE_CHECKING:
     from main import App
 
@@ -29,6 +27,5 @@ class Storage:
             'refresh_token': refresh_token,
         }).decode())
 
-    async def get_session(self) -> Session:
-        session = await self.get('session')
-        return orjson.loads(session)
+    async def get_session(self):
+        return await self.get('session')

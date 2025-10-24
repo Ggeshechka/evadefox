@@ -1,8 +1,11 @@
 from typing import TYPE_CHECKING, Optional
 
+import orjson
 from realtime import RealtimePostgresChangesListenEvent
 from supabase import AsyncClient, acreate_client
 from supabase_auth import UserResponse
+
+from ui.dialogs.authorization_dialog import AuthorizationDialog
 
 if TYPE_CHECKING:
     from main import App
@@ -12,17 +15,18 @@ class Authorization:
     def __init__(self, app: 'App'):
         self.app = app
 
-        self.URL = 'https://wsyfnacbvwxnnpibwcfj.supabase.co'
-        self.KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzeWZuYWNidnd4bm5waWJ3Y2ZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2OTA5MjIsImV4cCI6MjA3NTI2NjkyMn0.XBBEkdgQuJ5oGbnTncO3pncdoDZ6GSCY7kcFikprTzY'
+        self.URL = 'https://pefnaheuamyjzvdqycbl.supabase.co'
+        self.KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlZm5haGV1YW15anp2ZHF5Y2JsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMzE2OTIsImV4cCI6MjA3NjgwNzY5Mn0.DliQjUWbeV17rw8DrwHYt1jYm3EIQ8tBMg6z93xq9X0'
 
         self.client: Optional[AsyncClient] = None
         self.user: Optional[UserResponse] = None
 
     async def init(self):
+        self.client = await acreate_client(self.URL, self.KEY)
+        session = await self.app.storage.get_session()
         try:
-            self.client = await acreate_client(self.URL, self.KEY)
-            session = await self.app.storage.get_session()
             if session:
+                session = orjson.loads(session)
                 await self.client.auth.set_session(session['access_token'], session['refresh_token'])
                 self.user = await self.client.auth.get_user()
                 if self.user is None:
@@ -35,7 +39,7 @@ class Authorization:
                 return True
             return False
         except Exception as e:
-            print(e)
+            print('init', e)
             # self.app.dlg.error(e)
             return False
 
@@ -45,7 +49,7 @@ class Authorization:
             # self.app.dlg.message('letter sent')
             return True
         except Exception as e:
-            print(e)
+            print('send_token', e)
             # self.app.dlg.error(e)
             return False
 
@@ -58,37 +62,38 @@ class Authorization:
             await self.subscribe_realtime()
 
             await self.client.table('sessions').upsert({
-                'mid': await self.app.mid(),
+                'mid': self.app.set.device_info['mid'],
                 'uid': self.user.user.id,
             }).execute()
 
             return True
         except Exception as e:
-            print(e)
+            print('verify', e)
             # self.app.dlg.error(e)
             return False
 
     async def logout(self):
         try:
             if self.user:
-                await self.client.table('sessions').delete().eq('mid', await self.app.mid()).execute()
+                await self.client.table('sessions').delete().eq('mid', self.app.set.device_info['mid']).execute()
         except Exception as ex:
             print("Logout error:", ex)
 
     def handler_realtime(self):
         async def run():
             try:
-                resp = await self.client.table('sessions').select('*').eq('uid', self.user.id).execute()
-                if await self.app.mid() in [i['mid'] for i in resp.data]:
+                resp = await self.client.table('sessions').select('*').eq('uid', self.user.user.id).execute()
+                if self.app.set.device_info['mid'] in [i['mid'] for i in resp.data]:
                     pass
                 else:
                     await self.client.auth.sign_out()
                     await self.app.storage.clear()
                     self.user = None
-
+                    self.client = None
+                    self.app.page.show_dialog(AuthorizationDialog(self.app))
                 return True
             except Exception as e:
-                print(e)
+                print('handler_realtime', e)
                 # self.app.dlg.error(e)
                 return False
 
